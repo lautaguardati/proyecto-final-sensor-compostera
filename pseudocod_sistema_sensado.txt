@@ -1,0 +1,105 @@
+DEFINIR N_REINTENTOS_LECTURA = 3
+DEFINIR TIEMPO_SUEÑO_SEGUNDOS = 43200
+
+INICIO_PROGRAMA
+
+    MIENTRAS (VERDADERO) HACER
+    
+        Inicializar_Hardware()
+        
+        VAR temp_DS18B20 = VALOR_NULO
+        VAR estado_DS18B20 = "Error"
+        VAR temp_DHT22 = VALOR_NULO
+        VAR humedad_DHT22 = VALOR_NULO
+        VAR estado_DHT22 = "Error"
+        VAR valor_pH = VALOR_NULO
+        VAR estado_pH = "Error"
+        VAR lectura_ok = FALSO
+        VAR reintentos = 0
+        MIENTRAS (lectura_ok == FALSO Y reintentos < N_REINTENTOS_LECTURA)
+            VAR lectura = Leer_Sensor_DS18B20()
+            
+            SI (lectura != ERROR) ENTONCES
+                temp_DS18B20 = lectura
+                estado_DS18B20 = "OK"
+                lectura_ok = VERDADERO
+            SINO
+                reintentos = reintentos + 1
+                Esperar(250)
+            FIN_SI
+        FIN_MIENTRAS
+        
+        SI (lectura_ok == FALSO) ENTONCES
+            Informar_Error_Sensor("DS18B20")
+        FIN_SI
+
+        lectura_ok = FALSO
+        reintentos = 0
+        MIENTRAS (lectura_ok == FALSO Y reintentos < N_REINTENTOS_LECTURA)
+            VAR lectura = Leer_Sensor_DHT22()
+            
+            SI (lectura != ERROR) ENTONCES
+                temp_DHT22 = lectura.temperatura
+                humedad_DHT22 = lectura.humedad
+                estado_DHT22 = "OK"
+                lectura_ok = VERDADERO
+            SINO
+                reintentos = reintentos + 1
+                Esperar(250)
+            FIN_SI
+        FIN_MIENTRAS
+        
+        SI (lectura_ok == FALSO) ENTONCES
+            Informar_Error_Sensor("DHT-22")
+        FIN_SI
+
+        lectura_ok = FALSO
+        reintentos = 0
+        VAR lectura_raw_ph = VALOR_NULO
+        MIENTRAS (lectura_ok == FALSO Y reintentos < N_REINTENTOS_LECTURA)
+            lectura_raw_ph = Leer_Sensor_pH()
+            
+            SI (lectura_raw_ph != ERROR) ENTONCES
+                lectura_ok = VERDADERO
+            SINO
+                reintentos = reintentos + 1
+                Esperar(250)
+            FIN_SI
+        FIN_MIENTRAS
+        
+        SI (lectura_ok == VERDADERO) ENTONCES
+            valor_pH = Calibrar_Y_Procesar_pH(lectura_raw_ph)
+            estado_pH = "OK"
+        SINO
+            Informar_Error_Sensor("pH")
+        FIN_SI
+       VAR estado_bateria = 0
+       VAR alerta_bateria = FALSO
+       SI (leer_bateria == VERDADERO) ENTONCES
+	estado_bateria = leer_bateria
+       FIN_SI
+       SI (alerta_bateria < 20) ENTONCES
+	alerta_bateria = VERDADERO
+       FIN_SI
+        VAR timestamp_actual = Obtener_Timestamp_Actual()
+        VAR estado_sensores = [estado_DS18B20, estado_DHT22, estado_pH]
+        VAR paquete_datos = Formatear_Paquete(timestamp_actual, temp_DS18B20, temp_DHT22, humedad_DHT22, valor_pH, estado_sensores, estado_bateria, alerta_bateria)
+
+        VAR envio_exitoso = FALSO
+        MIENTRAS (envio_exitoso == FALSO)
+            envio_exitoso = Enviar_Paquete_LoRa(paquete_datos)
+            
+            SI (envio_exitoso == FALSO) ENTONCES
+                Esperar(1000)
+            FIN_SI
+        FIN_MIENTRAS
+
+        Registrar_Log(paquete_datos, "Envío exitoso")
+
+        Apagar_Perifericos()
+        
+        Dormir(TIEMPO_SUEÑO_SEGUNDOS)
+        
+    FIN_MIENTRAS
+
+FIN_PROGRAMA
